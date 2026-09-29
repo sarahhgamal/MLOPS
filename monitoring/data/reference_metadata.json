@@ -1,0 +1,9 @@
+{
+  "dataset_role": "monitoring_reference",
+  "taxi_type": "yellow",
+  "period": "2021-02",
+  "row_count": 75000,
+  "model_uri": "models:/taxi-duration-regressor@champion",
+  "source_file": "yellow_tripdata_2021-02.parquet",
+  "description": "Reference dataset for comparing future taxi batches, predictions, data quality, and model performance."
+}
