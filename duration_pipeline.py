@@ -10,6 +10,7 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.pipeline import make_pipeline
+import pickle
 
 
 # --------------------------------------------------
@@ -37,7 +38,7 @@ NUMERICAL_FEATURES = [
 
 MIN_DURATION = 1
 MAX_DURATION = 60
-SAMPLE_SIZE = 200_000
+SAMPLE_SIZE = 75_000
 RANDOM_STATE = 42
 
 
@@ -101,15 +102,10 @@ def get_data_paths(year, month):
 # --------------------------------------------------
 # Data preparation
 # --------------------------------------------------
-
 def prepare_data(file_path):
     """Load and prepare one yellow taxi dataset."""
 
     print(f"\nLoading {file_path.name}...")
-
-    df = pd.read_parquet(file_path)
-
-    print(f"Original number of rows: {len(df):,}")
 
     required_columns = [
         "tpep_pickup_datetime",
@@ -119,17 +115,14 @@ def prepare_data(file_path):
         "trip_distance",
     ]
 
-    missing_columns = [
-        column
-        for column in required_columns
-        if column not in df.columns
-    ]
+    # Load only the five columns required by the model.
+    # This significantly reduces memory usage.
+    df = pd.read_parquet(
+        file_path,
+        columns=required_columns,
+    )
 
-    if missing_columns:
-        raise ValueError(
-            "The following required columns are missing: "
-            f"{missing_columns}"
-        )
+    print(f"Original number of rows: {len(df):,}")
 
     df["tpep_pickup_datetime"] = pd.to_datetime(
         df["tpep_pickup_datetime"]
@@ -139,21 +132,28 @@ def prepare_data(file_path):
         df["tpep_dropoff_datetime"]
     )
 
-    # Target: trip duration in minutes.
+    # Calculate duration in minutes.
     df["duration"] = (
         df["tpep_dropoff_datetime"]
         - df["tpep_pickup_datetime"]
     ).dt.total_seconds() / 60
 
-    # Remove invalid or extreme durations.
-    df = df[
+    # Keep trips between 1 and 60 minutes.
+    duration_mask = (
         (df["duration"] >= MIN_DURATION)
         & (df["duration"] <= MAX_DURATION)
+    )
+
+    df = df.loc[
+        duration_mask,
+        CATEGORICAL_FEATURES
+        + NUMERICAL_FEATURES
+        + ["duration"],
     ].copy()
 
     print(f"Rows after filtering: {len(df):,}")
 
-    # Treat location IDs as categorical values.
+    # Treat location IDs as categories.
     df[CATEGORICAL_FEATURES] = (
         df[CATEGORICAL_FEATURES]
         .fillna(-1)
@@ -161,18 +161,18 @@ def prepare_data(file_path):
         .astype(str)
     )
 
-    # Replace missing numerical values.
+    # Replace missing distance values.
     df[NUMERICAL_FEATURES] = (
-        df[NUMERICAL_FEATURES].fillna(0)
+        df[NUMERICAL_FEATURES]
+        .fillna(0)
     )
 
-    # Sample rows to fit within the Codespace memory.
     rows_to_sample = min(SAMPLE_SIZE, len(df))
 
     df = df.sample(
         n=rows_to_sample,
         random_state=RANDOM_STATE,
-    )
+    ).reset_index(drop=True)
 
     print(f"Rows used after sampling: {len(df):,}")
     print(
@@ -181,7 +181,6 @@ def prepare_data(file_path):
     )
 
     return df
-
 
 # --------------------------------------------------
 # Feature preparation
@@ -432,6 +431,16 @@ def run(year, month):
 
         print("\nPipeline run saved to MLflow.")
         print(f"MLflow run ID: {active_run.info.run_id}")
+
+        models_dir = SCRIPT_DIR / "models"
+        models_dir.mkdir(exist_ok=True)
+
+        model_file = models_dir / "taxi_duration_model.bin"
+
+        with open(model_file, "wb") as file:
+         pickle.dump(model_pipeline, file)
+
+        print(f"Model saved to: {model_file}")
 
     print("\nTraining pipeline completed successfully.")
 
