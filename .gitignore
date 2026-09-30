@@ -230,4 +230,4 @@ data/
 
 # Python cache
 __pycache*_/
-*.py[cod]
+*.py[cod].venv-monitoring/
